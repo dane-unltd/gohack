@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"github.com/kr/pty"
 	"log"
+	"os"
 	"os/exec"
 )
 
@@ -21,30 +22,36 @@ var term = terminal{
 	connections: make(map[*connection]struct{}),
 }
 
+func termFunc(f *os.File, toController chan []byte, quit chan struct{}) {
+	var buf [1 << 10]byte
+	for {
+		n, err := f.Read(buf[:])
+		if err != nil {
+			quit <- struct{}{}
+			return
+		}
+		msg := make([]byte, n)
+		copy(msg, buf[:n])
+		toController <- msg
+	}
+}
+
 func (t *terminal) run(cmdStr string) {
 	cmd := exec.Command(cmdStr)
 	fromPty := make(chan []byte, 10)
+	quit := make(chan struct{})
 	f, err := pty.Start(cmd)
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	go func() {
-		var buf [1 << 10]byte
-		for {
-			n, err := f.Read(buf[:])
-			if err != nil {
-				log.Fatal(err)
-			}
-			msg := make([]byte, n)
-			copy(msg, buf[:n])
-			fromPty <- msg
-		}
-	}()
+	go termFunc(f, fromPty, quit)
 
+	var snapshot bytes.Buffer
 	for {
 		select {
 		case msg := <-fromPty:
+			snapshot.Write(msg)
 			var broadcast bytes.Buffer
 			broadcast.Write([]byte("term"))
 			broadcast.Write(msg)
@@ -56,9 +63,21 @@ func (t *terminal) run(cmdStr string) {
 					delete(t.connections, c)
 				}
 			}
+		case <-quit:
+			cmd = exec.Command(cmdStr)
+			f, err = pty.Start(cmd)
+			if err != nil {
+				log.Fatal(err)
+			}
+
+			go termFunc(f, fromPty, quit)
 		case c := <-t.register:
 			log.Println("incoming connection")
 			t.connections[c] = struct{}{}
+			var msg bytes.Buffer
+			msg.Write([]byte("term"))
+			msg.Write(snapshot.Bytes())
+			c.send <- msg.Bytes()
 		case c := <-t.unregister:
 			delete(t.connections, c)
 			//close(c.send)
