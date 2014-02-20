@@ -3,12 +3,22 @@
 <head>
 <title>Chat Example</title>
 <script src="//ajax.googleapis.com/ajax/libs/jquery/2.0.3/jquery.min.js"></script>
-<script type="text/javascript">
-    $(function() {
-
+<script src="js/term.js"></script>
+<script>
+$(document).ready(function() {
     var conn;
     var msg = $("#msg");
     var log = $("#log");
+    var terminal = $("#terminal");
+    console.log("opening terminal")
+    var term = new Terminal({
+	cols: 80,
+	rows: 24,
+	useStyle: true,
+	screenKeys: false
+	});
+
+    term.open(terminal[0])
 
     function appendLog(msg) {
         var d = log[0]
@@ -19,6 +29,13 @@
         }
     }
 
+    term.on('data', function(data) {
+        if (!conn) {
+            return;
+        }
+        conn.send("term" + data)
+  });
+
     $("#form").submit(function() {
         if (!conn) {
             return false;
@@ -26,7 +43,7 @@
         if (!msg.val()) {
             return false;
         }
-        conn.send(msg.val());
+        conn.send("chat"+msg.val());
         msg.val("");
         return false
     });
@@ -35,14 +52,24 @@
         conn = new WebSocket("ws://{{$}}/ws");
         conn.onclose = function(evt) {
             appendLog($("<div><b>Connection closed.</b></div>"))
+		    term.destroy()
         }
         conn.onmessage = function(evt) {
-            appendLog($("<div/>").text(evt.data))
+		var id = evt.data.substring(0,4);
+		var msg = evt.data.substring(4);
+		switch (id) {
+			case "chat":
+			    appendLog($("<div/>").text(msg))
+			    break;
+			case "term":
+				term.write(msg)
+				break;
+		}
         }
     } else {
         appendLog($("<div><b>Your browser does not support WebSockets.</b></div>"))
     }
-    });
+})
 </script>
 <style type="text/css">
 html {
@@ -59,34 +86,28 @@ body {
 }
 
 #log {
-    background: white;
-    margin: 0;
-    padding: 0.5em 0.5em 0.5em 0.5em;
-    position: absolute;
-    top: 0.5em;
-    left: 0.5em;
-    right: 0.5em;
-    bottom: 3em;
     overflow: auto;
+    height: 300px;
+    width:400px;
+    background: white;
+    padding: 0.5em 0.5em 0.5em 0.5em;
 }
 
 #form {
-    padding: 0 0.5em 0 0.5em;
-    margin: 0;
-    position: absolute;
-    bottom: 1em;
-    left: 0px;
-    width: 100%;
+    width:400px;
     overflow: hidden;
 }
 
 </style>
 </head>
 <body>
+<div id="terminal"></div>
+<div id="chat">
 <div id="log"></div>
 <form id="form">
     <input type="submit" value="Send" />
     <input type="text" id="msg" size="64"/>
 </form>
+</div>
 </body>
 </html>

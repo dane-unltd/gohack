@@ -29,8 +29,13 @@ func serveHome(w http.ResponseWriter, r *http.Request) {
 
 func main() {
 	flag.Parse()
-	go h.run()
+
+	go chatHub.run()
+	go term.run("nethack")
+
 	http.HandleFunc("/", serveHome)
+	http.Handle("/js/", http.StripPrefix("/js/", http.FileServer(http.Dir("js"))))
+	log.Println(http.Dir("js"))
 	http.HandleFunc("/ws", serveWs)
 	err := http.ListenAndServe(*addr, nil)
 	if err != nil {

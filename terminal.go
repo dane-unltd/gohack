@@ -1,31 +1,28 @@
-// Copyright 2013 Gary Burd. All rights reserved.
-// Use of this source code is governed by a BSD-style
-// license that can be found in the LICENSE file.
-
 package main
 
 import (
+	"bytes"
 	"github.com/kr/pty"
 	"log"
 	"os/exec"
 )
 
-type hub struct {
-	connections map[*connection]bool
+type terminal struct {
 	command     chan []byte
+	connections map[*connection]struct{}
 	register    chan *connection
 	unregister  chan *connection
 }
 
-var h = hub{
+var term = terminal{
 	command:     make(chan []byte),
 	register:    make(chan *connection),
 	unregister:  make(chan *connection),
-	connections: make(map[*connection]bool),
+	connections: make(map[*connection]struct{}),
 }
 
-func (h *hub) run() {
-	cmd := exec.Command("nethack")
+func (t *terminal) run(cmdStr string) {
+	cmd := exec.Command(cmdStr)
 	fromPty := make(chan []byte, 10)
 	f, err := pty.Start(cmd)
 	if err != nil {
@@ -48,21 +45,24 @@ func (h *hub) run() {
 	for {
 		select {
 		case msg := <-fromPty:
-			for c := range h.connections {
+			var broadcast bytes.Buffer
+			broadcast.Write([]byte("term"))
+			broadcast.Write(msg)
+			for c := range t.connections {
 				select {
-				case c.send <- msg:
+				case c.send <- broadcast.Bytes():
 				default:
-					close(c.send)
-					delete(h.connections, c)
+					//close(c.send)
+					delete(t.connections, c)
 				}
 			}
-		case c := <-h.register:
+		case c := <-t.register:
 			log.Println("incoming connection")
-			h.connections[c] = true
-		case c := <-h.unregister:
-			delete(h.connections, c)
-			close(c.send)
-		case cmd := <-h.command:
+			t.connections[c] = struct{}{}
+		case c := <-t.unregister:
+			delete(t.connections, c)
+			//close(c.send)
+		case cmd := <-t.command:
 			_, err := f.Write(cmd)
 			if err != nil {
 				log.Fatal(err)

@@ -37,7 +37,8 @@ type connection struct {
 // readPump pumps messages from the websocket connection to the hub.
 func (c *connection) readPump() {
 	defer func() {
-		h.unregister <- c
+		chatHub.unregister <- c
+		term.unregister <- c
 		c.ws.Close()
 	}()
 	c.ws.SetReadLimit(maxMessageSize)
@@ -48,7 +49,13 @@ func (c *connection) readPump() {
 		if err != nil {
 			break
 		}
-		h.command <- message
+		id := string(message[0:4])
+		message = message[4:]
+		if id == "chat" {
+			chatHub.message <- message
+		} else if id == "term" {
+			term.command <- message
+		}
 	}
 }
 
@@ -102,7 +109,10 @@ func serveWs(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	c := &connection{send: make(chan []byte, 256), ws: ws}
-	h.register <- c
+
+	chatHub.register <- c
+	term.register <- c
+
 	go c.writePump()
 	c.readPump()
 }
