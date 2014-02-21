@@ -63,6 +63,9 @@ func (t *terminal) run(cmdStr string) {
 					delete(t.connections, c)
 				}
 			}
+			if snapshot.Len() > 2<<18 {
+				snapshot.ReadBytes('\n')
+			}
 		case <-quit:
 			cmd = exec.Command(cmdStr)
 			f, err = pty.Start(cmd)
@@ -70,6 +73,7 @@ func (t *terminal) run(cmdStr string) {
 				log.Fatal(err)
 			}
 
+			snapshot.Reset()
 			go termFunc(f, fromPty, quit)
 		case c := <-t.register:
 			log.Println("incoming connection")
